@@ -12,6 +12,7 @@
 #include <sstream>
 #include <winternl.h>
 #include <ntstatus.h>
+#include "ld32.h"
 #include "HWBP.h"
 
 // Define o tipo da função LdrInitializeThunk
