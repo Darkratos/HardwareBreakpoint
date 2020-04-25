@@ -10,12 +10,12 @@ Example:
 ```cpp
 long __stdcall exception_handler( _EXCEPTION_POINTERS* ex )
 {
-  // Check if the exception was due a SINGLE_STEP
+  	// Check if the exception was due a SINGLE_STEP
 	if ( ex->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP ) {
   
-    // Get the Dr6 ( to check the breakpoint states )
+    		// Get the Dr6 ( to check the breakpoint states )
 		Dr6* curDr6 = reinterpret_cast< Dr6* > ( &ex->ContextRecord->Dr6 );
-    // Get the Dr7 ( to check the breakpoint condition )
+    		// Get the Dr7 ( to check the breakpoint condition )
 		Dr7* curDr7 = reinterpret_cast< Dr7* > ( &ex->ContextRecord->Dr7 );
 
 		// Checks if it was trully a hardware breakpoint that caused the exception
@@ -25,14 +25,14 @@ long __stdcall exception_handler( _EXCEPTION_POINTERS* ex )
 		int hit_num = 0;
 		bool execute_bp = true;
 
-    // Checks each of the states to get which breakpoint hit
+    		// Checks each of the states to get which breakpoint hit
 		if ( curDr6->dr0_bp_state ) {
-      // Zeroes out the state
+      			// Zeroes out the state
 			curDr6->dr0_bp_state = 0;
 
-      // Checks if it was an execution breakpoint
+      			// Checks if it was an execution breakpoint
 			if ( curDr7->dr0_permissions == 0 )
-        // If it was, set the Resume-Flag to avoid looping
+        			// If it was, set the Resume-Flag to avoid looping
 				ex->ContextRecord->EFlags |= ( 1 << 16 );
 			else
 				execute_bp = false;
@@ -65,16 +65,17 @@ long __stdcall exception_handler( _EXCEPTION_POINTERS* ex )
 				execute_bp = false;
 		}
     
-    // Here you can print the address that generated the exception and do whatever you want
+    		// Here you can print the address that generated the exception and do whatever you want
 		uintptr_t addr = ex->ContextRecord->Eip;
 
-    // Returns to normal program execution
+    		// Returns to normal program execution
 		return EXCEPTION_CONTINUE_EXECUTION;
 	}
 
-  // The exception wasn't caused by a breakpoint, transfer to the next handler or a try/catch block
+  	// The exception wasn't caused by a breakpoint, transfer to the next handler or a try/catch block
 	return EXCEPTION_CONTINUE_SEARCH;
-}```
+}
+```
 
 To set the exception handler, use:  
 
