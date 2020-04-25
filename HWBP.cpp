@@ -1,10 +1,24 @@
-#include "pch.h"
+#define WIN32_LEAN_AND_MEAN 
+#define _CRT_SECURE_NO_WARNINGS
+#include <windows.h>
+#include <stdlib.h>
+#include <malloc.h>
+#include <memory.h>
+#include <tchar.h>
+#include <vector>
+#include <string>
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <sstream>
+#include <winternl.h>
+#include <ntstatus.h>
+#include "HWBP.h"
 
-// Define o tipo da funÁ„o LdrInitializeThunk
+// Define o tipo da fun√ß√£o LdrInitializeThunk
 typedef NTSTATUS( WINAPI* _LdrInitializeThunk )( DWORD Unknown1 , DWORD Unknown2 , DWORD Unknown3 );
 _LdrInitializeThunk o_LdrInitializeThunk;
 
-// Hook do LdrInitializeThunk, usado para aplicar o breakpoint em threads recÈm criadas ( crÈditos ao iPower )
+// Hook do LdrInitializeThunk, usado para aplicar o breakpoint em threads rec√©m criadas ( cr√©ditos ao iPower )
 NTSTATUS WINAPI LdrInitializeThunkHk( DWORD Unknown1 , DWORD Unknown2 , DWORD Unknown3 )
 {
 	// Pega a thread atual
@@ -23,23 +37,23 @@ NTSTATUS WINAPI LdrInitializeThunkHk( DWORD Unknown1 , DWORD Unknown2 , DWORD Un
 	if ( hwbp->is_dr3_active )
 		hwbp->set_dr3( hwbp->dr3_address , hwbp->dr3_condition , hwbp->dr3_size , current_thread );
 
-	// Continua para a funÁ„o original
+	// Continua para a fun√ß√£o original
 	return o_LdrInitializeThunk( Unknown1 , Unknown2 , Unknown3 );
 }
 
-// Minha hook com calculo de size autom·tico ( apenas para x86 )
+// Minha hook com calculo de size autom√°tico ( apenas para x86 )
 DECLSPEC_NOINLINE DWORD cHWBP::HookFunction( DWORD Function , DWORD YourFunction , bool ForceE8 ) 
 {
-	// Se alguma das funÁıes for nula, retorna 0
+	// Se alguma das fun√ß√µes for nula, retorna 0
 	if ( !Function || !YourFunction ) return 0;
 	unsigned int length = 0;
 
-	// Calcula o size da instruÁ„o ( lembrando que o hook tem que ter no minimo 5 bytes e n„o pode deixar instruÁıes quebradas )
+	// Calcula o size da instru√ß√£o ( lembrando que o hook tem que ter no minimo 5 bytes e n√£o pode deixar instru√ß√µes quebradas )
 	while ( length < 5 ) {
 		length += length_disasm( ( void* ) ( Function + length ) );
 	}
 
-	// Detecta automaticamente se vocÍ est· hookando uma call
+	// Detecta automaticamente se voc√™ est√° hookando uma call
 	if ( *( BYTE* ) Function == 0xE8 ) {
 		// Se sim, apenas escreve o relative address e retorna o address original
 		DWORD realaddress = *( DWORD* ) ( Function + 1 ) + ( DWORD ) Function + 5;
@@ -47,20 +61,20 @@ DECLSPEC_NOINLINE DWORD cHWBP::HookFunction( DWORD Function , DWORD YourFunction
 		return realaddress;
 	}
 
-	// Define as proteÁıes e aloca espaÁo para a stub
+	// Define as prote√ß√µes e aloca espa√ßo para a stub
 	DWORD Old;
 	DWORD NewLocation = ( DWORD ) VirtualAlloc( NULL , length + 5 , MEM_COMMIT , PAGE_EXECUTE_READWRITE );
 	VirtualProtect( ( PVOID ) Function , length , PAGE_EXECUTE_READWRITE , &Old );
 	VirtualProtect( ( PVOID ) NewLocation , length + 5 , PAGE_EXECUTE_READWRITE , 0 );
 
-	// Se estiver hookando em um local que contenha um JMP, aqui ele trata da relocaÁ„o do jmp
+	// Se estiver hookando em um local que contenha um JMP, aqui ele trata da reloca√ß√£o do jmp
 	if ( *( BYTE* ) Function == 0xE9 ) {
 		DWORD realaddress = *( DWORD* ) ( Function + 1 ) + ( DWORD ) Function + 5;
 		*( BYTE* ) ( NewLocation ) = 0xE9;
 		*( DWORD* ) ( NewLocation + 1 ) = ( realaddress - NewLocation - 5 );
 	}
 	else {
-		// Se n„o, apenas copia os bytes ( sim, falta checagens de instruÁıes relativas, mas fiquei com preguiÁa :D )
+		// Se n√£o, apenas copia os bytes ( sim, falta checagens de instru√ß√µes relativas, mas fiquei com pregui√ßa :D )
 		memcpy( ( void* ) NewLocation , ( void* ) Function , length );
 	}
 
@@ -68,13 +82,13 @@ DECLSPEC_NOINLINE DWORD cHWBP::HookFunction( DWORD Function , DWORD YourFunction
 	*( BYTE* ) ( NewLocation + length ) = 0xE9;
 	*( DWORD* ) ( NewLocation + length + 1 ) = ( Function - NewLocation - 5 );
 
-	// Se foi especificado para forÁar E8 ( call ), escreve 0xE8, se n„o, escreve 0xE9 ( jmp )
+	// Se foi especificado para for√ßar E8 ( call ), escreve 0xE8, se n√£o, escreve 0xE9 ( jmp )
 	if ( ForceE8 )
 		* ( BYTE* ) ( Function ) = 0xE8;
 	else
 		*( BYTE* ) ( Function ) = 0xE9;
 
-	// Escreve o endereÁo relativo
+	// Escreve o endere√ßo relativo
 	*( DWORD* ) ( Function + 1 ) = ( YourFunction - Function - 5 );
 
 	// Retorna a stub
@@ -100,22 +114,22 @@ DECLSPEC_NOINLINE std::vector<HANDLE> cHWBP::GetRunningThreads( )
 	// Preenche o dwSize ( necessario para o Thread32First )
 	te32.dwSize = sizeof( THREADENTRY32 );
 
-	// Pega informaÁıes sobre a thread atual e sai caso falhe
+	// Pega informa√ß√µes sobre a thread atual e sai caso falhe
 	if ( !Thread32First( hThreadSnap , &te32 ) )
 	{
 		CloseHandle( hThreadSnap );     // Limpa o objeto da snapshot
 		return retVec;
 	}
 
-	// Agora ele itera sobre as threads que est„o rodando usando Thread32Next
+	// Agora ele itera sobre as threads que est√£o rodando usando Thread32Next
 	do
 	{
-		// Verifica se de fato a thread È do processo atual ( n„o tenho certeza se È realmente necessario )
+		// Verifica se de fato a thread √© do processo atual ( n√£o tenho certeza se √© realmente necessario )
 		if ( te32.th32OwnerProcessID == GetCurrentProcessId( ) )
 		{
-			// Pega apenas threads que n„o sejam a atual
+			// Pega apenas threads que n√£o sejam a atual
 			if ( te32.th32ThreadID != CurrentThreadID ) {
-				// Pega um handle com permiss„o de acesso total na thread
+				// Pega um handle com permiss√£o de acesso total na thread
 				HANDLE curThread = OpenThread( THREAD_ALL_ACCESS , false , te32.th32ThreadID );
 
 				// Se o handle for valido, coloca ele no vector
@@ -130,7 +144,7 @@ DECLSPEC_NOINLINE std::vector<HANDLE> cHWBP::GetRunningThreads( )
 	return retVec;
 }
 
-// FunÁ„o para ativar o hook na LdrInitializeThunk
+// Fun√ß√£o para ativar o hook na LdrInitializeThunk
 DECLSPEC_NOINLINE void cHWBP::HookLdrInitializeThunk( void )
 {
 	// Pega o address da LdrInitializeThunk
@@ -143,25 +157,25 @@ DECLSPEC_NOINLINE void cHWBP::HookLdrInitializeThunk( void )
 }
 
 // Seta o breakpoint Dr0 em todas as threads
-// Vou comentar apenas esse, os outros seguem o mesmo padr„o
+// Vou comentar apenas esse, os outros seguem o mesmo padr√£o
 DECLSPEC_NOINLINE void cHWBP::set_dr0( uintptr_t address , int condition , int size )
 {
 	int m_index;
 	CONTEXT cxt;
 
-	// Seta os atributos na class para serem acessados pelo hook caso necess·rio
+	// Seta os atributos na class para serem acessados pelo hook caso necess√°rio
 	is_dr0_active = true;
 	dr0_address = address;
 	dr0_condition = condition;
 	dr0_size = size;
 
-	// Calcula condiÁ„o e size corretos ( olhar manual intel )
+	// Calcula condi√ß√£o e size corretos ( olhar manual intel )
 	condition = ( condition == 2 ) ? 3 : condition;
 	size = ( size == 2 ) ? 3 : size;
 
 	// Itera sobre as threads
 	for ( auto thisThread : GetRunningThreads( ) ) {
-		// Suspende a thread para que n„o haja discrep‚ncia de EIP, registers, etc
+		// Suspende a thread para que n√£o haja discrep√¢ncia de EIP, registers, etc
 		SuspendThread( thisThread );
 
 		// Seta as ContextFlags para usar no GetThreadContext
@@ -177,7 +191,7 @@ DECLSPEC_NOINLINE void cHWBP::set_dr0( uintptr_t address , int condition , int s
 		Dr7* curDr7 = reinterpret_cast< Dr7* > ( &cxt.Dr7 );
 		EFLAGS* eflags = reinterpret_cast< EFLAGS* > ( &cxt.EFlags );
 
-		// Seta o breakpoint e suas caracterÌsticas
+		// Seta o breakpoint e suas caracter√≠sticas
 		cxt.Dr0 = address;
 		curDr7->dr0_permissions = condition;
 		curDr7->dr0_length = size;
@@ -186,7 +200,7 @@ DECLSPEC_NOINLINE void cHWBP::set_dr0( uintptr_t address , int condition , int s
 		// Seta o context com o breakpoint na thread
 		SetThreadContext( thisThread , &cxt );
 		
-		// Continua a execuÁ„o na thread
+		// Continua a execu√ß√£o na thread
 		ResumeThread( thisThread );
 	}
 }
@@ -308,7 +322,7 @@ DECLSPEC_NOINLINE void cHWBP::set_dr3( uintptr_t address , int condition , int s
 	}
 }
 
-// Aqui segue a mesma lÛgica, mas apenas para uma thread
+// Aqui segue a mesma l√≥gica, mas apenas para uma thread
 DECLSPEC_NOINLINE void cHWBP::set_dr0( uintptr_t address , int condition , int size , HANDLE thread )
 {
 	int m_index;
@@ -464,13 +478,13 @@ void cHWBP::clear( void )
 
 	// Itera por todas as threads
 	for ( auto thisThread : GetRunningThreads( ) ) {
-		// Suspende para evitar a discrep‚ncia
+		// Suspende para evitar a discrep√¢ncia
 		SuspendThread( thisThread );
 
 		// Seta a flag pro GetThreadContext
 		cxt.ContextFlags = CONTEXT_DEBUG_REGISTERS;
 
-		// Se falhar, vai pra prÛxima thread
+		// Se falhar, vai pra pr√≥xima thread
 		if ( !GetThreadContext( thisThread , &cxt ) )
 			continue;
 
@@ -505,7 +519,7 @@ void cHWBP::clear( void )
 		// Aplica o novo context sem os breakpoints
 		SetThreadContext( thisThread , &cxt );
 
-		// Continua a execuÁ„o na thread
+		// Continua a execu√ß√£o na thread
 		ResumeThread( thisThread );
 	}
 }
